@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>💰 Expense Tracker</h1>
+            <p>Track your daily expenses with ease</p>
+        </header>
+
+        <!-- Add Expense Form -->
+        <div class="form-section">
+            <h2>Add New Expense</h2>
+            <form id="expenseForm">
+                <div class="form-group">
+                    <label for="item">Item/Description:</label>
+                    <input type="text" id="item" name="item" required placeholder="e.g., Coffee, Lunch, Gas">
+                </div>
+                
+                <div class="form-group">
+                    <label for="cost">Cost ($):</label>
+                    <input type="number" id="cost" name="cost" step="0.01" min="0" required placeholder="0.00">
+                </div>
+                
+                <div class="form-group">
+                    <label for="date">Date:</label>
+                    <input type="date" id="date" name="date" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Add Expense</button>
+            </form>
+        </div>
+
+        <!-- Dashboard -->
+        <div class="dashboard">
+            <!-- Total Expenses -->
+            <div class="total-section">
+                <h2>Total Expenses</h2>
+                <div class="total-amount" id="totalAmount">$0.00</div>
+            </div>
+
+            <!-- Recent Expenses -->
+            <div class="recent-section">
+                <h2>Recent Expenses (Last 5)</h2>
+                <div id="recentExpensesList" class="expense-list">
+                    <!-- Expenses will be inserted here by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="messageContainer" class="message-container"></div>
+    </div>
+
+    <script>
+        // Set today's date as default
+        document.getElementById('date').valueAsDate = new Date();
+
+        // Load expenses on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadExpenses();
+        });
+
+        // Handle form submission
+        document.getElementById('expenseForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            fetch('/add_expense', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage('Expense added successfully!', 'success');
+                    this.reset();
+                    document.getElementById('date').valueAsDate = new Date();
+                    loadExpenses();
+                } else {
+                    showMessage(data.error || 'Error adding expense', 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Error: ' + error.message, 'error');
+            });
+        });
+
+        // Update the loadExpenses function to include delete buttons
+        function loadExpenses() {
+            fetch('/get_expenses')
+            .then(response => response.json())
+            .then(data => {
+                // Update total amount
+                document.getElementById('totalAmount').textContent = `$${data.total.toFixed(2)}`;
+                
+                // Update recent expenses
+                const recentList = document.getElementById('recentExpensesList');
+                recentList.innerHTML = '';
+                
+                if (data.recent_expenses.length === 0) {
+                    recentList.innerHTML = '<p class="no-expenses">No expenses recorded yet.</p>';
+                } else {
+                    data.recent_expenses.forEach(expense => {
+                        const expenseItem = document.createElement('div');
+                        expenseItem.className = 'expense-item';
+                        expenseItem.innerHTML = `
+                            <div class="expense-info">
+                                <div class="expense-name">${expense.item}</div>
+                                <div class="expense-date">${formatDate(expense.date)}</div>
+                                <div class="expense-cost">$${parseFloat(expense.cost).toFixed(2)}</div>
+                            </div>
+                            <button class="delete-btn" data-id="${expense.id}">Delete</button>
+                        `;
+                        recentList.appendChild(expenseItem);
+                    });
+                    
+                    // Add event listeners to delete buttons
+                    document.querySelectorAll('.delete-btn').forEach(button => {
+                        button.addEventListener('click', function() {
+                            const expenseId = this.getAttribute('data-id');
+                            deleteExpense(expenseId);
+                        });
+                    });
+                }
+            })
+            .catch(error => {
+                showMessage('Error loading expenses: ' + error.message, 'error');
+            });
+        }
+
+        // Function to delete an expense
+        function deleteExpense(id) {
+            if (confirm('Are you sure you want to delete this expense?')) {
+                fetch(`/delete_expense/${id}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage('Expense deleted successfully', 'success');
+                        loadExpenses(); // Reload the expenses
+                    } else {
+                        showMessage('Error: ' + data.error, 'error');
+                    }
+                })
+                .catch(error => {
+                    showMessage('Error: ' + error.message, 'error');
+                });
+            }
+        }
+
+        // Format date for display
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+
+        // Show status messages
+        function showMessage(message, type) {
+            const container = document.getElementById('messageContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            
+            container.appendChild(messageDiv);
+            
+            // Remove message after 3 seconds
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+
+        // Auto-refresh expenses every 30 seconds
+        setInterval(loadExpenses, 30000);
+    </script>
+</body>
+</html>
