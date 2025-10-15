@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Shopping List</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='shopping.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛒 Smart Shopping List</h1>
+            <p>Never forget what to buy again!</p>
+        </header>
+        <div class="form-section">
+            <h2>Add New Item</h2>
+            <form id="shoppingForm">
+                <div class="form-group">
+                    <label for="item_name">Item Name</label>
+                    <input type="text" id="item_name" name="item_name" required>
+                </div>
+                <div class="form-group">
+                    <label for="quantity">Quantity</label>
+                    <input type="number" id="quantity" name="quantity" min="1" value="1">
+                </div>
+                <div class="form-group">
+                    <label for="category">Category</label>
+                    <select id="category" name="category" required>
+                        <option value="">Select Category</option>
+                        <option value="Produce">Produce</option>
+                        <option value="Dairy">Dairy</option>
+                        <option value="Bakery">Bakery</option>
+                        <option value="Meat">Meat</option>
+                        <option value="Frozen">Frozen</option>
+                        <option value="Pantry">Pantry</option>
+                        <option value="Household">Household</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Priority</label>
+                    <div class="priority-options">
+                        <label class="priority-option">
+                            <input type="radio" name="priority" value="Low" required>
+                            <span class="priority-label low">Low</span>
+                        </label>
+                        <label class="priority-option">
+                            <input type="radio" name="priority" value="Medium" checked>
+                            <span class="priority-label medium">Medium</span>
+                        </label>
+                        <label class="priority-option">
+                            <input type="radio" name="priority" value="High">
+                            <span class="priority-label high">High</span>
+                        </label>
+                    </div>
+                </div>
+                <button type="submit" class="btn">Add to List</button>
+            </form>
+        </div>
+        <div class="dashboard">
+            <div class="summary-section">
+                <h2>Shopping Summary</h2>
+                <div class="summary-cards">
+                    <div class="summary-card pending">
+                        <span class="count" id="pendingCount">0</span>
+                        <span class="label">Items Pending</span>
+                    </div>
+                    <div class="summary-card categories">
+                        <span class="count" id="categoryCount">0</span>
+                        <span class="label">Categories</span>
+                    </div>
+                </div>
+            </div>
+            <div class="items-section">
+                <h2>Shopping List</h2>
+                <div id="shoppingList" class="item-list">
+                </div>
+            </div>
+        </div>
+        <div id="messageContainer" class="message-container"></div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            loadItems();
+        });
+        document.getElementById('shoppingForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            fetch('/add_item', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage('Item added successfully!', 'success');
+                    this.reset();
+                    loadItems();
+                } else {
+                    showMessage('Error: ' + (data.error || 'Failed to add item'), 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Error: ' + error.message, 'error');
+            });
+        });
+        function loadItems() {
+            fetch('/get_items')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('pendingCount').textContent = data.pending;
+                document.getElementById('categoryCount').textContent = data.categories.length;
+                const shoppingList = document.getElementById('shoppingList');
+                shoppingList.innerHTML = '';
+                if (data.recent_items.length === 0) {
+                    shoppingList.innerHTML = '<p class="no-items">Your shopping list is empty.</p>';
+                } else {
+                    data.recent_items.forEach(item => {
+                        const itemElement = document.createElement('div');
+                        itemElement.className = `shopping-item ${item.purchased ? 'purchased' : ''}`;
+                        itemElement.dataset.id = item.id;
+                        itemElement.innerHTML = `
+                            <div class="item-checkbox">
+                                <input type="checkbox" id="item-${item.id}" ${item.purchased ? 'checked' : ''}>
+                                <label for="item-${item.id}"></label>
+                            </div>
+                            <div class="item-info">
+                                <span class="item-name">${item.item_name}</span>
+                                <span class="item-meta">
+                                    <span class="item-quantity">Qty: ${item.quantity}</span>
+                                    <span class="item-category">${item.category}</span>
+                                </span>
+                            </div>
+                            <div class="item-priority priority-${item.priority.toLowerCase()}">${item.priority}</div>
+                            <button class="delete-btn" data-id="${item.id}">✕</button>
+                        `;
+                        shoppingList.appendChild(itemElement);
+                    });
+                    document.querySelectorAll('.item-checkbox input').forEach(checkbox => {
+                        checkbox.addEventListener('change', function() {
+                            const itemId = this.closest('.shopping-item').dataset.id;
+                            togglePurchased(itemId);
+                        });
+                    });
+                    document.querySelectorAll('.delete-btn').forEach(button => {
+                        button.addEventListener('click', function() {
+                            const itemId = this.getAttribute('data-id');
+                            deleteItem(itemId);
+                        });
+                    });
+                }
+            })
+            .catch(error => {
+                showMessage('Error loading items: ' + error.message, 'error');
+            });
+        }
+        function togglePurchased(itemId) {
+            fetch(`/toggle_purchased/${itemId}`, {
+                method: 'PUT'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const item = document.querySelector(`.shopping-item[data-id="${itemId}"]`);
+                    if (data.purchased) {
+                        item.classList.add('purchased');
+                    } else {
+                        item.classList.remove('purchased');
+                    }
+                    loadItems();
+                } else {
+                    showMessage('Error: ' + (data.error || 'Failed to update item'), 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Error: ' + error.message, 'error');
+            });
+        }
+        function deleteItem(itemId) {
+            if (confirm('Are you sure you want to delete this item?')) {
+                fetch(`/delete_item/${itemId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage('Item deleted successfully!', 'success');
+                        loadItems();
+                    } else {
+                        showMessage('Error: ' + (data.error || 'Failed to delete item'), 'error');
+                    }
+                })
+                .catch(error => {
+                    showMessage('Error: ' + error.message, 'error');
+                });
+            }
+        }
+        function showMessage(message, type) {
+            const container = document.getElementById('messageContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            container.appendChild(messageDiv);
+            setTimeout(() => {
+                messageDiv.classList.add('fade-out');
+                setTimeout(() => {
+                    container.removeChild(messageDiv);
+                }, 500);
+            }, 3000);
+        }
+        setInterval(loadItems, 30000);
+    </script>
+</body>
+</html>
